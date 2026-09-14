@@ -1,0 +1,24 @@
+# Core data processing
+pandas>=2.2,<3.0
+numpy>=1.26,<3.0
+pyarrow>=15.0,<19.0
+pyyaml>=6.0,<7.0
+python-dotenv>=1.0,<2.0
+
+# Intent classification baselines / TF-IDF
+scikit-learn>=1.4,<2.0
+scipy>=1.11,<2.0
+
+# Retrieval (local, free embeddings + vector index)
+sentence-transformers>=3.0,<4.0
+faiss-cpu>=1.8,<2.0
+
+# NVIDIA LLM integration (OpenAI-compatible client)
+openai>=1.30,<2.0
+tenacity>=8.2,<9.0
+
+# CLI / utilities
+tqdm>=4.66,<5.0
+
+# Testing
+pytest>=8.0,<9.0

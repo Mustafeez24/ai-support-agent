@@ -1,8 +1,22 @@
 .env
 .venv/
+venv/
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.DS_Store
+*.log
+
+# Raw dataset: 517MB, never committed. See README for placement instructions.
 data/raw/
+# Derived from the raw dataset; regenerate locally, do not commit.
 data/processed/
+# Embedding/FAISS caches and other large generated artifacts.
 outputs/cache/
+
 .idea/
+.vscode/
