@@ -313,10 +313,12 @@ def main() -> None:
             "to pandas' generic parser and are otherwise left NaT.",
         ],
     }
-    (args.out_dir / "dataset_summary.json").write_text(json.dumps(dataset_summary, indent=2, default=str))
+    (args.out_dir / "dataset_summary.json").write_text(
+        json.dumps(dataset_summary, indent=2, default=str), encoding="utf-8"
+    )
 
-    scored.to_csv(args.out_dir / "brand_statistics.csv", index=False)
-    conversation_stats.to_csv(args.out_dir / "conversation_statistics.csv", index=False)
+    scored.to_csv(args.out_dir / "brand_statistics.csv", index=False, encoding="utf-8")
+    conversation_stats.to_csv(args.out_dir / "conversation_statistics.csv", index=False, encoding="utf-8")
 
     md_lines = [
         "# Candidate Brand Analysis",
@@ -364,7 +366,7 @@ def main() -> None:
         "See dataset_summary.json for full schema/missing/duplicate stats and",
         "DECISIONS.md for the rationale behind these thresholds.",
     ]
-    (args.out_dir / "candidate_brands.md").write_text("\n".join(md_lines))
+    (args.out_dir / "candidate_brands.md").write_text("\n".join(md_lines), encoding="utf-8")
 
     logger.info("Wrote analysis artifacts to %s", args.out_dir)
     logger.info("Top candidate: %s (score=%.3f)", scored.iloc[0]["brand"], scored.iloc[0]["score"])

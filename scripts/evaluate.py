@@ -155,8 +155,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         evaluate_mod.evaluate_system(b2_preds, true_intents, true_escalations),
     ]
     comparison = evaluate_mod.build_comparison_table(reports)
-    comparison.to_csv(cfg.METRICS_DIR / "comparison_table.csv", index=False)
-    (cfg.METRICS_DIR / "evaluation_report.json").write_text(json.dumps(reports, indent=2, default=str))
+    comparison.to_csv(cfg.METRICS_DIR / "comparison_table.csv", index=False, encoding="utf-8")
+    (cfg.METRICS_DIR / "evaluation_report.json").write_text(
+        json.dumps(reports, indent=2, default=str), encoding="utf-8"
+    )
     logger.info("Wrote comparison table and evaluation report to %s", cfg.METRICS_DIR)
     logger.info("\n%s", comparison.to_string(index=False))
 
@@ -166,7 +168,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         judge_results = evaluate_mod.judge_auto_handled_replies(
             agent.llm, golden_df["id"].tolist(), texts, prod_preds, cfg.CONFIG.brand.author_id
         )
-        pd.DataFrame(judge_results).to_csv(cfg.METRICS_DIR / "judge_scores.csv", index=False)
+        pd.DataFrame(judge_results).to_csv(cfg.METRICS_DIR / "judge_scores.csv", index=False, encoding="utf-8")
         logger.info("Judged %d/%d auto-handled replies -> %s", len(judge_results), sum(1 for e in prod_preds.escalations if not e), cfg.METRICS_DIR / "judge_scores.csv")
     else:
         logger.warning(
@@ -188,7 +190,7 @@ def cmd_human_review_template(args: argparse.Namespace) -> None:
         template[dim] = ""
     template["reviewer_notes"] = ""
     out_path = cfg.METRICS_DIR / "human_review_template.csv"
-    template.to_csv(out_path, index=False)
+    template.to_csv(out_path, index=False, encoding="utf-8")
     logger.info(
         "Wrote %d unrated examples to %s. A human must fill in columns %s "
         "(scores 1-5, no_hallucination as True/False), save as "
@@ -211,7 +213,7 @@ def cmd_agreement(args: argparse.Namespace) -> None:
     judge_df = pd.read_csv(scores_path)
     report = agreement_mod.compute_agreement_report(human_df, judge_df)
     out_path = cfg.METRICS_DIR / "judge_agreement_report.json"
-    out_path.write_text(json.dumps(report, indent=2, default=str))
+    out_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     logger.info("Wrote %s", out_path)
     logger.info(json.dumps(report, indent=2, default=str))
 

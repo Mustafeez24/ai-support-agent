@@ -613,3 +613,32 @@ value.
 
 *(This is the last phase with new architectural decisions; remaining
 phases are experiments, writing, and cleanup.)*
+
+---
+
+## 27. Every output-writing call sets `encoding="utf-8"` explicitly
+
+**Decision:** All `Path.write_text(...)`, `DataFrame.to_csv(...)`, and the
+one `open(...)` read of `config/intents.yaml` across `scripts/` and
+`src/` pass `encoding="utf-8"` explicitly, rather than relying on the
+platform default.
+
+**Why:** `Path.write_text()` without `encoding=` uses
+`locale.getpreferredencoding()` -- UTF-8 on Linux/macOS, but typically
+**cp1252 on Windows**. The dataset contains legitimate multilingual and
+emoji customer text (this project's own design goal is to preserve it,
+never strip/transliterate it), so a Windows run crashed with
+`UnicodeEncodeError` writing `candidate_brands.md` the moment a
+non-cp1252-encodable character appeared in a sampled example. `to_csv`'s
+`encoding` parameter already defaults to `"utf-8"` in pandas regardless of
+platform (so those calls were not actually broken), but they're made
+explicit anyway for readability and defense-in-depth, per the same
+principle as decision #8 (no implicit, scattered defaults).
+
+**Tradeoff:** None -- this is strictly more correct on every platform.
+`tests/test_encoding.py` regression-tests the exact code path that
+crashed (a tiny CSV with emoji/CJK/accented text run through the real
+`scripts/analyze_dataset.py main()`), asserting the output files contain
+the original Unicode unmodified when read back, plus a direct assertion
+that the sample text cannot even be cp1252-encoded (documenting why the
+bug occurred, not just that the fix exists).

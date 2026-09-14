@@ -111,7 +111,7 @@ def load_taxonomy(path: Path) -> dict:
     thin wrapper so callers don't need to know it's YAML)."""
     import yaml
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

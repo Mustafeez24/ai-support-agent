@@ -56,7 +56,7 @@ def main() -> None:
     )
     summary_path = cfg.ANALYSIS_DIR / "preprocessing_summary.json"
     cfg.ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2, default=str))
+    summary_path.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     logger.info("Done. Summary written to %s", summary_path)
     logger.info(json.dumps(summary, indent=2, default=str))
 

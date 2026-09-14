@@ -137,7 +137,7 @@ def run_discovery(
         ),
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(report, indent=2))
+    out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     logger.info("Wrote intent discovery report to %s", out_path)
     return report
 

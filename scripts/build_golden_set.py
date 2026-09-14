@@ -166,7 +166,7 @@ def cmd_sample(args: argparse.Namespace) -> None:
         }
     )
     cfg.GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
-    out.to_csv(_candidates_path(), index=False)
+    out.to_csv(_candidates_path(), index=False, encoding="utf-8")
     logger.info(
         "Wrote %d unlabeled candidates to %s. Strata: %s",
         len(out),
@@ -213,7 +213,7 @@ def cmd_label(args: argparse.Namespace) -> None:
         while True:
             choice = input("Intent #: ").strip().lower()
             if choice == "quit":
-                df.to_csv(_golden_set_path(), index=False)
+                df.to_csv(_golden_set_path(), index=False, encoding="utf-8")
                 print(f"Saved progress to {_golden_set_path()}. Resume any time with the same command.")
                 return
             if choice == "skip":
@@ -228,7 +228,7 @@ def cmd_label(args: argparse.Namespace) -> None:
                 df.loc[idx, "labeled_at"] = datetime.datetime.utcnow().isoformat()
                 break
             print("Invalid input. Enter a number 1-%d, 'skip', or 'quit'." % len(intent_names))
-        df.to_csv(_golden_set_path(), index=False)  # save after every example
+        df.to_csv(_golden_set_path(), index=False, encoding="utf-8")  # save after every example
 
     print(f"\nAll examples labeled. Saved to {_golden_set_path()}.")
 
@@ -258,7 +258,7 @@ def cmd_report(args: argparse.Namespace) -> None:
         )
 
     out_path = cfg.GOLDEN_DIR / "label_distribution.json"
-    out_path.write_text(json.dumps(distribution, indent=2))
+    out_path.write_text(json.dumps(distribution, indent=2), encoding="utf-8")
     logger.info("Wrote %s", out_path)
     logger.info(json.dumps(distribution, indent=2))
 
