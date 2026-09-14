@@ -353,5 +353,73 @@ larger scale. Documented here rather than prematurely engineered now.
 
 ---
 
-*(Further decisions for LLM integration, escalation policy, baselines, and
-evaluation are appended as those phases are built.)*
+## 17. LLM access goes through a provider-agnostic interface, never `openai`/NVIDIA directly
+
+**Decision:** `src/llm/base.py` defines `LLMProvider` (an ABC with
+`is_configured()` / `generate()`); `src/llm/nvidia.py`'s
+`NvidiaLLMProvider` is the only implementation, but the agent, judge, and
+any future caller depend on `LLMProvider`/`LLMMessage`/`LLMResponse`, never
+on `openai.OpenAI` or NVIDIA-specific request/response shapes directly.
+
+**Why:** The assignment explicitly asks for this so the provider can be
+swapped later; NVIDIA's endpoint happening to be OpenAI-compatible today
+doesn't guarantee every future provider will be.
+
+**Tradeoff:** One extra layer of indirection for a project with exactly
+one real provider today — accepted because it's a small, contained cost
+(~60 lines) for a requirement stated directly in the brief.
+
+---
+
+## 18. Missing/placeholder API key raises before any network call, not on first failure
+
+**Decision:** `NvidiaLLMProvider._get_client()` checks
+`config.is_configured()` (real key present, not the literal placeholder
+`"YOUR_NVIDIA_API_KEY_HERE"`) and raises `LLMNotConfiguredError`
+immediately — before constructing an `OpenAI` client or entering the
+retry loop.
+
+**Why:** Without this check, an unset/placeholder key would still attempt
+3 real HTTP calls with exponential backoff (per decision #19) against
+NVIDIA's endpoint, wait several seconds, and then fail with a generic
+auth error — burning time and producing a confusing error for exactly the
+"I haven't set up my API key yet" case the assignment says must "fail
+gracefully with a clear message."
+
+**Tradeoff:** None — this is strictly better than the alternative in every
+case; documented because it's easy to accidentally regress (e.g. moving
+the check after client construction) without a test, which is why
+`test_generate_raises_not_configured_without_calling_network` asserts
+`OpenAI()` is never even constructed in this path.
+
+---
+
+## 19. Retries use `tenacity` with exponential backoff, configurable retry count
+
+**Decision:** `NvidiaLLMProvider.generate` retries via
+`tenacity.Retrying` with `stop_after_attempt(config.max_retries)` and
+`wait_exponential(multiplier=1, min=1, max=10)`, re-raising the last
+exception (wrapped as `LLMProviderError`) if all attempts fail.
+
+**Alternatives considered:** Hand-rolled retry loop with `time.sleep` —
+avoids one small dependency, but `tenacity` is a well-tested, ~single
+purpose library and hand-rolling backoff/jitter correctly is exactly the
+kind of thing worth not reinventing.
+
+**Why chosen:** Transient network/rate-limit errors are expected against
+any real API; failing after one attempt would make the agent needlessly
+fragile, while retrying forever would hang. Exponential backoff bounded at
+10s keeps total added latency bounded even at `max_retries=3`.
+
+**Tradeoff:** `retry_if_exception_type(Exception)` retries on *any*
+exception, including e.g. a malformed-request error that will never
+succeed on retry. Accepted for now (the OpenAI SDK's error hierarchy would
+let us retry only on `RateLimitError`/`APIConnectionError` specifically)
+because the current failure mode of "retry a few times, then escalate to
+human" is safe either way — a human seeing "the agent tried and gave up"
+is an acceptable outcome for both transient and permanent LLM failures.
+
+---
+
+*(Further decisions for the agent pipeline, escalation policy, baselines,
+and evaluation are appended as those phases are built.)*
