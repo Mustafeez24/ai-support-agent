@@ -54,3 +54,38 @@ class SentenceTransformerEmbedder:
             convert_to_numpy=True,
         )
         return np.asarray(vectors, dtype=np.float32)
+
+
+class TfidfEmbedder:
+    """TF-IDF "embedding" used only by Baseline 2 (src/intents/baselines.py)
+    -- a real, classical, non-LLM/non-neural retrieval representation, kept
+    separate from `SentenceTransformerEmbedder` so the production system's
+    dense retrieval and the simple baseline's TF-IDF retrieval are
+    unambiguously different implementations, not the same code compared to
+    itself.
+    """
+
+    def __init__(self, max_features: int = 5000):
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        self._vectorizer = TfidfVectorizer(
+            max_features=max_features, stop_words="english", ngram_range=(1, 2), min_df=1
+        )
+        self._fitted = False
+
+    def fit(self, corpus: list[str]) -> "TfidfEmbedder":
+        self._vectorizer.fit(corpus)
+        self._fitted = True
+        return self
+
+    @property
+    def dimension(self) -> int:
+        return len(self._vectorizer.vocabulary_)
+
+    def embed(self, texts: list[str]) -> np.ndarray:
+        if not self._fitted:
+            raise RuntimeError("TfidfEmbedder must be fit() before embed().")
+        from sklearn.preprocessing import normalize
+
+        matrix = self._vectorizer.transform(texts).toarray().astype(np.float32)
+        return normalize(matrix, axis=1)

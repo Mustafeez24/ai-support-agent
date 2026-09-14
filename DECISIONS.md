@@ -516,5 +516,30 @@ against the golden set. Listed as a candidate limitation in report Section
 
 ---
 
-*(Further decisions for baselines and evaluation are appended as those
-phases are built.)*
+## 23. Baseline 2 reuses production's classifier and escalation policy on purpose
+
+**Decision:** `TfidfNearestNeighborBaseline` uses the exact same
+`IntentClassifier` class and the exact same `decide_escalation` function
+as the production agent. The only things that differ from production are
+(a) the retrieval representation (`TfidfEmbedder`, classical sparse
+vectors, vs. the production `SentenceTransformerEmbedder`, dense neural
+embeddings) and (b) the reply itself (verbatim top-1 historical match vs.
+LLM-generated, evidence-grounded text).
+
+**Why:** A baseline that differs from the real system in five things at
+once makes it impossible to say *what* the real system's advantage comes
+from. Isolating retrieval quality and generation quality as the only two
+variables means Phase 9's comparison table can support a specific claim
+("dense retrieval finds more relevant evidence than TF-IDF" / "LLM
+generation produces better replies than copying the nearest match") rather
+than a vague "our system is better."
+
+**Tradeoff:** This makes Baseline 2 *stronger* than a naive
+"simple baseline" might otherwise be (it benefits from the same
+classifier and escalation tuning as production), which is a deliberately
+higher bar for the full system to clear — a choice made in favor of a more
+rigorous, defensible comparison over an easier-to-beat strawman.
+
+---
+
+*(Further decisions for evaluation are appended as that phase is built.)*

@@ -188,3 +188,72 @@ def test_seed_centroid_labels_empty_input():
 
     taxonomy = clf_mod.load_taxonomy(TAXONOMY_PATH)
     assert weak_labels.seed_centroid_labels([], taxonomy) == []
+
+
+# --- baselines.py -------------------------------------------------------------
+
+
+def test_trivial_baseline_always_escalates_with_majority_intent():
+    from src.intents.baselines import ESCALATE_TO_HUMAN, TrivialBaseline
+
+    baseline = TrivialBaseline.fit(["delivery_delay", "delivery_delay", "damaged_or_defective_item"])
+    result = baseline.predict("anything at all")
+    assert result.intent == "delivery_delay"
+    assert result.decision == ESCALATE_TO_HUMAN
+    assert result.evidence == []
+
+
+def test_trivial_baseline_fit_requires_labels():
+    from src.intents.baselines import TrivialBaseline
+
+    with pytest.raises(ValueError):
+        TrivialBaseline.fit([])
+
+
+def test_tfidf_nearest_neighbor_baseline_returns_verbatim_reply():
+    import pandas as pd
+
+    from src.intents.baselines import AUTO_HANDLE, TfidfNearestNeighborBaseline
+    from src.retrieval.embeddings import TfidfEmbedder
+    from src.retrieval.retriever import Retriever
+
+    texts = DELIVERY_TEXTS + DAMAGED_TEXTS
+    labels = ["delivery_delay"] * len(DELIVERY_TEXTS) + ["damaged_or_defective_item"] * len(DAMAGED_TEXTS)
+    classifier = clf_mod.IntentClassifier(random_seed=42)
+    classifier.fit(texts, labels)
+
+    pairs = pd.DataFrame(
+        {
+            "conversation_id": [f"c{i}" for i in range(len(texts))],
+            "customer_tweet_id": [f"t{i}" for i in range(len(texts))],
+            "customer_text": texts,
+            "brand_tweet_id": [f"b{i}" for i in range(len(texts))],
+            "brand_text": [f"HISTORICAL REPLY {i}" for i in range(len(texts))],
+            "split": "train_retrieval",
+        }
+    )
+    embedder = TfidfEmbedder().fit(texts)
+    retriever = Retriever(embedder, top_k=3)
+    retriever.build(pairs)
+
+    taxonomy = clf_mod.load_taxonomy(TAXONOMY_PATH)
+    from src.config import EscalationConfig
+
+    lenient_config = EscalationConfig(
+        min_intent_confidence=0.0,
+        min_evidence_similarity=0.0,
+        min_evidence_count=1,
+        always_escalate_intents=(),
+    )
+    baseline = TfidfNearestNeighborBaseline(classifier, retriever, taxonomy, lenient_config)
+    result = baseline.predict("My package never arrived, still waiting")
+    assert result.decision == AUTO_HANDLE
+    assert result.reply.startswith("HISTORICAL REPLY")  # verbatim, not generated
+
+
+def test_tfidf_embedder_requires_fit_before_embed():
+    from src.retrieval.embeddings import TfidfEmbedder
+
+    embedder = TfidfEmbedder()
+    with pytest.raises(RuntimeError):
+        embedder.embed(["hello"])
