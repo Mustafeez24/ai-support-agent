@@ -163,3 +163,28 @@ def test_always_escalate_intents_matches_config_defaults():
     taxonomy = clf_mod.load_taxonomy(TAXONOMY_PATH)
     yaml_always_escalate = clf_mod.always_escalate_intents(taxonomy)
     assert yaml_always_escalate == set(cfg.CONFIG.escalation.always_escalate_intents)
+
+
+# --- weak_labels.py -------------------------------------------------------------
+
+
+def test_seed_centroid_labels_matches_obvious_topics():
+    from src.intents import weak_labels
+
+    taxonomy = clf_mod.load_taxonomy(TAXONOMY_PATH)
+    texts = [
+        "my package has not arrived and it was supposed to be here days ago",
+        "this item arrived broken and damaged out of the box",
+        "gibberish nonsense text with no meaning at all zzz",
+    ]
+    labels = weak_labels.seed_centroid_labels(texts, taxonomy, min_similarity=0.05)
+    assert labels[0] == "delivery_delay"
+    assert labels[1] == "damaged_or_defective_item"
+    assert labels[2] == "other_unclear"
+
+
+def test_seed_centroid_labels_empty_input():
+    from src.intents import weak_labels
+
+    taxonomy = clf_mod.load_taxonomy(TAXONOMY_PATH)
+    assert weak_labels.seed_centroid_labels([], taxonomy) == []

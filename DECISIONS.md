@@ -421,5 +421,100 @@ is an acceptable outcome for both transient and permanent LLM failures.
 
 ---
 
-*(Further decisions for the agent pipeline, escalation policy, baselines,
-and evaluation are appended as those phases are built.)*
+## 20. The production classifier is trained on weak, taxonomy-seed-derived labels
+
+**Decision:** `scripts/train_classifier.py` labels the `train_retrieval`
+split via `src/intents/weak_labels.seed_centroid_labels` — TF-IDF cosine
+similarity between each historical customer message and each intent's
+`examples` in `config/intents.yaml`, taking the closest match (or
+`other_unclear` below a low floor) — then trains the same
+`IntentClassifier` used in production on those pseudo-labels.
+
+**Alternatives considered:** Train on `data/golden/golden_set.csv`
+directly (the one real human-labeled dataset this project produces) —
+rejected outright: that set exists specifically to be a leak-free,
+never-trained-on measurement of the system, per DECISIONS.md #3. Training
+on it would make every downstream accuracy number circular. Manually
+labeling a *second*, larger set just for training was ruled out as outside
+this environment's constraints (no real data, and mass-labeling via an
+LLM would be exactly the "auto-labeled but called hand-labeled" practice
+the assignment explicitly forbids).
+
+**Why chosen:** Distant/weak supervision from seed examples is a standard,
+honest bootstrap technique. It's fully automatic (no fabricated human
+involvement claimed), reproducible, and — critically — its real quality is
+then measured for real against the golden set in Phase 9, rather than
+assumed.
+
+**Known limitation (see also report Section 12):** with only ~2 seed
+examples per intent, TF-IDF similarity on such a small anchor set is
+noisy — during testing, a delivery-delay message about `"order... late"`
+nearest-matched a payment-dispute anchor purely because of anchor-set IDF
+statistics being unstable with so few documents (verified directly; see
+`tests/test_intents.py`'s weak-label tests, which use more distinctively-
+worded examples specifically because of this). **Action before relying on
+this for real results:** run `python -m src.intents.discover`, review
+`outputs/analysis/intent_clusters_report.json`, and paste several real
+per-intent example messages into each intent's `examples` field in
+`config/intents.yaml` (not just the current 2 seed sentences) before
+running `train_classifier.py` for real — more, real seed examples
+directly fix this noise.
+
+**Tradeoff:** The classifier's pre-evaluation confidence scores are not
+calibrated probabilities in any rigorous sense (they're
+`LogisticRegression.predict_proba` fit on noisy labels); the escalation
+policy's `min_intent_confidence` threshold should be tuned only after
+Phase 9's real evaluation, not trusted at its current default a priori.
+
+---
+
+## 21. Escalation on LLM failure never lets a broken/empty reply through
+
+**Decision:** `SupportAgent.handle` catches only
+`LLMNotConfiguredError`/`LLMProviderError` (and an internally-raised
+`LLMProviderError` for an empty reply) around `_generate_reply`, and on
+any of them **flips the decision to ESCALATE_TO_HUMAN** and substitutes
+the fixed `FALLBACK_REPLY`, appending the failure to `escalation_reason`
+rather than silently returning a broken/blank response.
+
+**Why:** A support agent that occasionally returns an empty string or
+crashes on a real customer message is worse than one that visibly asks
+for human help. Fail-safe (toward a human), not fail-open, is the correct
+default for anything customer-facing tied to a paid brand's account.
+
+**Tradeoff:** A transient NVIDIA API blip converts what could have been an
+auto-handled case into a human escalation. Accepted: the alternative
+(retry indefinitely, or send a possibly-broken reply) is worse in a
+support context; `tenacity` retries (decision #19) already absorb most
+transient failures before this path is reached at all.
+
+---
+
+## 22. "Conflicting evidence" is a keyword-bucket heuristic, not semantic analysis
+
+**Decision:** `has_conflicting_evidence` flags conflict only when the top
+retrieved historical replies' action-keyword buckets (refund /
+replacement / return / cancel) share zero common bucket, using a small
+fixed keyword list per bucket.
+
+**Alternatives considered:** Embed the brand-reply texts and flag conflict
+on pairwise dissimilarity — more "semantic," but conflates "different
+wording" with "different resolution," and would need its own threshold
+tuned against real data we don't have.
+
+**Why chosen:** The keyword-bucket approach is transparent, fast (no extra
+model call), and directly interpretable in the escalation reason string
+("refund vs. replacement"). It only ever adds false negatives (misses
+real conflicts phrased without these keywords) rather than false-flagging
+based on wording differences that don't matter, given non-empty
+intersection.
+
+**Tradeoff:** Genuinely limited — this is a heuristic, explicitly named as
+one in the module docstring, and its recall is unknown until measured
+against the golden set. Listed as a candidate limitation in report Section
+12/14.
+
+---
+
+*(Further decisions for baselines and evaluation are appended as those
+phases are built.)*
