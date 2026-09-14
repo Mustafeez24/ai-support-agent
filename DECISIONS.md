@@ -285,5 +285,73 @@ millions).
 
 ---
 
-*(Further decisions for retrieval, LLM integration, escalation policy,
-baselines, and evaluation are appended as those phases are built.)*
+## 14. Retrieval indexes the customer-message side, evidence is the paired brand reply
+
+**Decision:** The FAISS index embeds `customer_text` (historical customer
+messages); a search returns those messages' nearest neighbors, and the
+*paired* `brand_text` (the brand's actual historical reply to that
+specific message) is what's surfaced as grounding evidence.
+
+**Why:** The agent's query at inference time is also a customer message,
+so customer-to-customer semantic similarity is the correct search space.
+Embedding brand replies instead (or in addition) would search "which past
+replies sound like a good reply", which has no connection to whether that
+reply actually addressed a similar problem.
+
+**Tradeoff:** If a historical brand reply doesn't actually resolve the
+paired customer message well (real support data is imperfect — see report
+Section 12), that flawed reply is exactly what gets retrieved and could be
+what the agent grounds on. This is a known limitation, not fixed here; the
+agent's prompt/generation step (Phase 7) is expected to synthesize across
+multiple retrieved pairs rather than copy any single one verbatim.
+
+---
+
+## 15. `Retriever.build` hard-fails on non-`train_retrieval` input
+
+**Decision:** Building the index raises `LeakageError` if any row's
+`split` isn't `train_retrieval`, unless the caller explicitly passes
+`allow_any_split=True` (used only by tests).
+
+**Why:** Given how much of this assignment's grading rests on "prove
+retrieval doesn't leak," a runtime assertion that fails loudly is worth
+more than a code comment saying "remember to filter to train_retrieval
+before calling this." `scripts/build_index.py` still filters explicitly
+too (defense in depth), but the library function itself refuses to be
+misused silently.
+
+**Tradeoff:** Slightly more ceremony for legitimate exploratory use (e.g.
+"what would retrieval find if I included everything") — solved by the
+explicit opt-out flag, which is greppable and impossible to do by
+accident.
+
+---
+
+## 16. Embeddings are normalized; the FAISS index is `IndexFlatIP`
+
+**Decision:** `SentenceTransformerEmbedder.embed` L2-normalizes every
+vector (`normalize_embeddings=True`), and the index is a flat
+inner-product index (`faiss.IndexFlatIP`), so inner product == cosine
+similarity.
+
+**Alternatives considered:** `IndexFlatL2` (Euclidean distance) requires a
+separate mental model for "lower is better" vs. the intuitive "higher
+similarity is better," and doesn't directly correspond to cosine
+similarity without also normalizing — same normalization requirement, less
+intuitive output.
+
+**Why chosen:** Cosine similarity is the standard, interpretable
+similarity measure for sentence embeddings; normalizing once at embed time
+means every downstream consumer of a similarity score (escalation
+thresholds, evaluation Recall@K, the report) can treat it as a plain
+[-1, 1] cosine value.
+
+**Tradeoff:** `IndexFlatIP` is exact (brute-force) search, O(n) per query —
+fine at AmazonHelp's realistic corpus size (tens of thousands of pairs)
+on CPU, but would need an approximate index (e.g. `IndexIVFFlat`) at much
+larger scale. Documented here rather than prematurely engineered now.
+
+---
+
+*(Further decisions for LLM integration, escalation policy, baselines, and
+evaluation are appended as those phases are built.)*
