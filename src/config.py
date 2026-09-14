@@ -140,11 +140,16 @@ class EscalationConfig:
     min_intent_confidence: float = _env_float("ESCALATION_MIN_INTENT_CONFIDENCE", 0.55)
     min_evidence_similarity: float = _env_float("ESCALATION_MIN_EVIDENCE_SIMILARITY", 0.35)
     min_evidence_count: int = _env_int("ESCALATION_MIN_EVIDENCE_COUNT", 2)
-    # Intents that always require a human regardless of confidence/evidence
-    # (account access, payment/security-sensitive, etc.). Populated once the
-    # taxonomy is finalized in config/intents.yaml; kept here only as a
-    # last-resort structural default.
-    always_escalate_intents: tuple[str, ...] = ("account_security", "payment_dispute")
+    # Intents that always require a human regardless of confidence/evidence.
+    # Must match intent names in config/intents.yaml (see each intent's
+    # `always_escalate` field, which is the source of truth this list
+    # mirrors for fast lookup without re-parsing YAML on every request).
+    always_escalate_intents: tuple[str, ...] = (
+        "account_access_issue",
+        "payment_or_billing_issue",
+        "general_complaint_or_feedback",
+        "other_unclear",
+    )
 
 
 @dataclass(frozen=True)

@@ -189,5 +189,63 @@ the pipeline has been validated against it.
 
 ---
 
+## 10. Intent taxonomy shipped as a labeled DRAFT, not fabricated cluster output
+
+**Decision:** `config/intents.yaml` ships with `status:
+DRAFT_PENDING_DATA_VALIDATION`, seeded from domain knowledge of what
+`@AmazonHelp` actually handles (order/delivery, refunds, account, Prime,
+device support) rather than from real clustering output, because the real
+dataset was not available in the environment that built this taxonomy.
+`src/intents/discover.py` is the real, tested tool that produces the
+evidence (TF-IDF + MiniBatchKMeans clusters, top terms, real sample
+messages) a human then uses to validate/revise this file.
+
+**Alternatives considered:** Wait to write any taxonomy until the real
+data is available (blocks every downstream phase — golden set, retrieval,
+agent, evaluation — on one manual step); silently run discovery on a tiny
+placeholder and present its output as if it were real (would fabricate
+results, explicitly forbidden).
+
+**Why chosen:** A clearly-labeled seed taxonomy lets every downstream
+phase (golden set schema, agent intent list, escalation rules, baseline
+classifier) be built and tested now against a real, reviewable set of
+intents, while making unmistakable — in the file itself — that intent
+*names and boundaries* are pending validation, and that the discovery tool
+is what validates them, not domain guesswork alone.
+
+**Tradeoff:** Anyone reading only the taxonomy without noticing the status
+field could mistake it for data-validated; mitigated by putting the status
+and required-next-step instructions at the very top of the file, in the
+README, and here.
+
+---
+
+## 11. The "simple baseline" classifier IS the production classifier
+
+**Decision:** `src/intents/classifier.py`'s TF-IDF + LogisticRegression
+`IntentClassifier` is used both as the agent's actual (Phase 7) intent
+classifier and, unmodified, as "Baseline 2" (Phase 8's required
+simple/non-LLM baseline).
+
+**Alternatives considered:** Build two separate classifiers — a
+deliberately weaker one to serve as "the baseline" and a fancier one (e.g.
+an LLM-based classifier) as "the real system."
+
+**Why chosen:** The assignment explicitly says to prefer deterministic/
+local methods over the LLM where they're strong enough, and a TF-IDF
+classifier is strong enough for a well-scoped, ~10-class intent problem.
+Using the *same* model for both roles means the "baseline comparison" is
+honest — it's not rigged by comparing a strawman to the real system — and
+the real system doesn't burn an LLM call per incoming message just to
+pick one of ~10 labels.
+
+**Tradeoff:** Baseline 2 and the production classifier will always score
+identically on intent metrics; the comparison that remains meaningful is
+Baseline 1 (trivial) vs. this classifier, and — separately — this
+classifier's retrieval+reply+escalation pipeline vs. Baseline 2's
+simpler TF-IDF-nearest-neighbor reply/rule-based escalation (Phase 8).
+
+---
+
 *(Further decisions for retrieval, LLM integration, escalation policy,
 baselines, and evaluation are appended as those phases are built.)*
