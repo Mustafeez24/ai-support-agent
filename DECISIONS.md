@@ -542,4 +542,74 @@ rigorous, defensible comparison over an easier-to-beat strawman.
 
 ---
 
-*(Further decisions for evaluation are appended as that phase is built.)*
+## 24. Retrieval evaluation uses an "intent-match@K" proxy, not true Recall@K
+
+**Decision:** `retrieval_intent_match_at_k` measures whether the golden
+example's true intent appears among the (classifier-predicted) intents of
+the top-K retrieved historical messages -- not whether a specific,
+hand-labeled "correct" retrieved item was found.
+
+**Why:** True Recall@K requires a relevance judgment per (query,
+candidate) pair -- "is this specific historical message actually relevant
+to this query" -- which this project has no ground truth for and building
+one was out of scope (it would mean a second large hand-labeling effort
+beyond the golden set). Intent-consistency is a defensible proxy: good
+retrieval should mostly surface same-intent historical cases.
+
+**Tradeoff, stated plainly:** This can be inflated by intent-class
+imbalance (a dominant intent will "match" often almost by chance) and
+doesn't verify the retrieved evidence is *actually* useful for this
+specific issue within the intent, only that it's topically adjacent. This
+is named explicitly as a limitation in report.md Section 12 ("What is
+misleading about my headline number?") rather than presented as a
+rigorous retrieval-quality guarantee.
+
+---
+
+## 25. The LLM judge is only run on AUTO_HANDLE replies, never on escalation fallbacks
+
+**Decision:** `judge_auto_handled_replies` skips every golden example
+where the system's decision was `ESCALATE_TO_HUMAN`.
+
+**Why:** Escalated cases all produce the exact same fixed fallback string
+(`FALLBACK_REPLY`/`GENERIC_FALLBACK_REPLY`) -- grading identical boilerplate
+text against a "relevance/groundedness/helpfulness" rubric per example
+would waste real LLM calls on a constant, uninformative signal. This also
+directly satisfies the assignment's "do not make unnecessary API calls"
+instruction: the judge is bounded by the golden set size (≤ ~200 calls)
+and further reduced by however many examples correctly escalate.
+
+**Tradeoff:** Reply-quality metrics only describe the AUTO_HANDLE subset,
+not the whole golden set. `evaluation_report.json` records how many
+examples were judged out of how many were eligible, so this is visible,
+not hidden.
+
+---
+
+## 26. Human-vs-judge agreement is computed only from files a real person produced
+
+**Decision:** `scripts/evaluate.py agreement` reads
+`outputs/metrics/human_review_ratings.csv`, which only exists after a
+human has filled in `human_review_template.csv` (produced by the
+`human-review-template` stage) and saved it under that exact filename.
+Nothing in this codebase auto-generates that file's rating columns.
+
+**Why:** This mirrors the golden-set labeling safeguard (DECISIONS.md
+#13): the assignment explicitly warns against calling automatically
+produced labels "hand-labeled," and the same principle applies here --
+"human-judge agreement" must come from an actual human, or the number is
+meaningless (worse, actively misleading). `agreement.py`'s functions take
+plain DataFrames as parameters specifically so the module itself has no
+opinion about where the human ratings came from — the burden of ensuring
+they're real is on the one file (`human_review_ratings.csv`) a person
+must actually produce.
+
+**Tradeoff:** This is a hard blocker on producing a complete Phase 9
+report without a real annotation session -- by design. `report.md` marks
+this section PENDING rather than inventing a plausible-looking kappa
+value.
+
+---
+
+*(This is the last phase with new architectural decisions; remaining
+phases are experiments, writing, and cleanup.)*
