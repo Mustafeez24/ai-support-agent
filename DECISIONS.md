@@ -247,5 +247,43 @@ simpler TF-IDF-nearest-neighbor reply/rule-based escalation (Phase 8).
 
 ---
 
+## 12. Golden-set sampling is stratified by *unsupervised* clusters, not by intent
+
+**Decision:** `scripts/build_golden_set.py sample` stratifies the 200-ish
+golden-set sample by a fresh TF-IDF+KMeans clustering over the
+golden_eval pool itself, not by the (still-draft) intent taxonomy or by
+the discovery clusters computed in Phase 3.
+
+**Why:** Using the taxonomy to stratify would bias the sample toward
+whatever intent boundaries were guessed in Phase 3, potentially hiding a
+real category the taxonomy missed. An independent unsupervised clustering
+run on the eval pool itself surfaces the pool's actual structure without
+assuming the taxonomy is already correct, and a human still assigns the
+real intent label per example during `label`.
+
+**Tradeoff:** Two separate clustering runs exist in the codebase (Phase 3
+discovery vs. this sampling stratification) with similar code — accepted
+because they serve different purposes (taxonomy evidence vs. sampling
+diversity) and conflating them would make it unclear which run any given
+number came from.
+
+---
+
+## 13. The labeling CLI writes to disk after every single example
+
+**Decision:** `cmd_label` calls `df.to_csv(...)` after each labeled row,
+not once at the end of the session.
+
+**Why:** A 200-example hand-labeling session will not finish in one
+sitting. Losing partially-completed work to a closed terminal, a crash, or
+an accidental Ctrl-C would be a serious cost for a task that's
+irreducibly manual. The per-row save cost (a small CSV rewrite) is
+negligible next to that risk.
+
+**Tradeoff:** None meaningful at this scale (hundreds of rows, not
+millions).
+
+---
+
 *(Further decisions for retrieval, LLM integration, escalation policy,
 baselines, and evaluation are appended as those phases are built.)*
