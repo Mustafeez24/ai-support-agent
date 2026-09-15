@@ -645,7 +645,24 @@ bug occurred, not just that the fix exists).
 
 ---
 
-## 28. `Retriever` embeds before importing faiss (Windows DLL-init-order fix)
+## 28. `Retriever` embeds before importing faiss (Windows DLL-init-order fix) -- UPDATE: did not resolve the failure, do not treat the hypothesis below as confirmed
+
+**Status update (after this fix was deployed and re-tested on the real
+Windows machine):** `python scripts\build_index.py` failed again with the
+*identical* traceback (`OSError: [WinError 1114] ... c10.dll`), at the
+identical point (`sentence_transformers`' internal `import torch`) --
+except this time `self.embedder.embed(...)` runs *before* `import faiss`
+executes at all (this fix's own change), so faiss had not yet entered the
+process when torch failed to initialize. **That result does not confirm
+"faiss loads first" as the cause -- it's evidence against that being a
+sufficient explanation on its own.** The reorder is left in place (it's
+harmless and still a real improvement for the case where faiss genuinely
+is the trigger), but nothing below should be read as an established root
+cause. See `scripts/diagnose_torch_faiss.py`, written specifically to
+gather real evidence (which other native library, if any, needs to be
+loaded first to reproduce this) before any further change is made. The
+original entry is kept below as the reasoning that existed at the time,
+not as a settled conclusion.
 
 **Decision:** `Retriever.build()` now calls `self.embedder.embed(...)`
 *before* `import faiss` (previously faiss was imported first). `Retriever.load()`
