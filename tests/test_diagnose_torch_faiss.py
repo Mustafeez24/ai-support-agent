@@ -59,6 +59,52 @@ def test_build_import_tests_ids_are_unique():
     assert len(ids) == len(set(ids))
 
 
+# --- build_narrowing_tests (round-2 A-K matrix) -----------------------------------
+
+
+def test_build_narrowing_tests_covers_all_required_letters():
+    tests = diag.build_narrowing_tests()
+    ids = {t.id for t in tests}
+    assert ids == set("ABCDEFGHIJK")
+
+
+def test_build_narrowing_tests_every_test_imports_torch():
+    # Every letter test must actually import torch somewhere -- it's the
+    # thing that fails on the real machine, and the one invariant every
+    # test in this matrix shares.
+    for t in diag.build_narrowing_tests():
+        assert "import torch" in t.code
+
+
+def test_build_narrowing_tests_letters_isolate_expected_packages():
+    tests = {t.id: t.code for t in diag.build_narrowing_tests()}
+    assert "numpy" in tests["A"] and "pandas" not in tests["A"] and "pyarrow" not in tests["A"]
+    assert "pyarrow" in tests["B"] and "pandas" not in tests["B"] and "numpy" not in tests["B"]
+    assert "pandas" in tests["C"] and "pyarrow" not in tests["C"] and "numpy" not in tests["C"]
+    assert "pandas" in tests["D"] and "pyarrow" in tests["D"]
+    assert "numpy" in tests["E"] and "pyarrow" in tests["E"]
+    assert "pandas" in tests["F"] and "numpy" in tests["F"]
+    assert "pyarrow" in tests["G"] and "numpy" in tests["G"]
+    assert "pandas" in tests["H"] and "numpy" in tests["H"] and "pyarrow" in tests["H"]
+    for letter in ("I", "J", "K"):
+        assert "read_parquet" in tests[letter]
+
+
+def test_build_narrowing_tests_no_id_collision_with_round_one():
+    round_one_ids = {t.id for t in diag.build_import_tests()}
+    round_two_ids = {t.id for t in diag.build_narrowing_tests()}
+    # Round-one "C" and "D" (faiss/sentence_transformers combos) are short
+    # bare letters too -- confirm they're a DIFFERENT test (different code)
+    # from round-two "C"/"D", so a reader can't confuse which is which by
+    # id alone; both sets existing is fine (documented in the script's
+    # module docstring) as long as their *codes* clearly differ.
+    round_one_by_id = {t.id: t.code for t in diag.build_import_tests()}
+    round_two_by_id = {t.id: t.code for t in diag.build_narrowing_tests()}
+    shared = round_one_ids & round_two_ids
+    for id_ in shared:
+        assert round_one_by_id[id_] != round_two_by_id[id_]
+
+
 # --- run_isolated: PASS / FAIL / ERROR classification -----------------------------
 
 
@@ -87,6 +133,28 @@ def test_run_isolated_error_on_timeout():
     result = diag.run_isolated(test)
     assert result.status == diag.ERROR
     assert "TIMEOUT" in result.detail
+
+
+def test_run_isolated_captures_full_traceback_not_truncated():
+    # A traceback with well more than 8 lines (the old truncation limit
+    # was `stderr.splitlines()[-8:]`) -- every frame, including the
+    # EARLIEST one (f_outermost), must survive into `detail`, since the
+    # whole point of this round is inspecting the complete failure, not
+    # just whatever fit in a short tail.
+    depth = 15
+    lines = [f"def f0(): raise RuntimeError('deep failure marker')"]
+    for i in range(1, depth):
+        lines.append(f"def f{i}(): f{i - 1}()")
+    lines.append(f"f{depth - 1}()")
+    code = "\n".join(lines)
+
+    test = diag.ImportTest("T", "deep traceback", code)
+    result = diag.run_isolated(test)
+    assert result.status == diag.FAIL
+    assert "deep failure marker" in result.detail
+    assert f"f{depth - 1}" in result.detail  # outermost frame (would be cut by an 8-line tail)
+    assert "f0" in result.detail  # innermost frame
+    assert len(result.detail.splitlines()) > 8  # proves it wasn't cut to a short tail
 
 
 # --- find_package_dir / list_dlls -------------------------------------------------

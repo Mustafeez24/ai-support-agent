@@ -10,8 +10,20 @@ failure recurred with the exact same traceback even though, with that
 fix in place, torch is the FIRST native extension entering the process at
 the point of failure (faiss hasn't been imported yet). That result does
 NOT confirm the original hypothesis -- it argues against it being
-*sufficient* on its own. This script exists to gather real evidence
-before any further code change is made.
+*sufficient* on its own.
+
+Round 2 (real Windows results): `import faiss; import torch` and
+`import torch; import faiss` BOTH pass -- faiss is not implicated.
+`import torch; <then> pandas+pyarrow` passes, but `import pandas;
+import torch`, `import pandas; import pyarrow; <then> sentence_
+transformers`, and `pandas.read_parquet(...); <then> sentence_
+transformers` all FAIL with the same WinError 1114. pandas and/or
+pyarrow (tested only together so far) are implicated; numpy alone is
+untested. PART A2 below (tests A-K) isolates numpy, pandas, and pyarrow
+individually and in every pairwise/triple combination before `import
+torch`, to identify the minimal trigger from evidence rather than guess.
+This script exists to gather that evidence before any further code
+change is made.
 
 Every import-order test runs in its own SEPARATE subprocess (not just a
 separate function call in this process), because the entire point is to
@@ -167,6 +179,72 @@ def build_import_tests() -> list[ImportTest]:
     ]
 
 
+def build_narrowing_tests() -> list[ImportTest]:
+    """Round 2, added after real Windows evidence showed:
+      - PASS: import faiss; import torch  AND  import torch; import faiss
+        (faiss is not the trigger either order)
+      - PASS: import torch; then pandas + pyarrow (torch first is fine)
+      - FAIL: import pandas; import torch
+      - FAIL: import pandas; import pyarrow; from sentence_transformers import SentenceTransformer
+      - FAIL: pandas.read_parquet(tiny_file); then sentence_transformers
+      - FAIL: the project's own SentenceTransformerEmbedder + Retriever construction
+
+    That evidence implicates "something pandas and/or pyarrow load"
+    conflicting with torch's later init when pandas/pyarrow go first --
+    but pandas and pyarrow were always tested together, so which one (or
+    whether it's numpy underneath either of them) is still unknown. This
+    matrix isolates each of numpy/pandas/pyarrow individually and in every
+    pairwise/triple combination, always ending in `import torch` last, so
+    the single result that changes from PASS to FAIL identifies the
+    minimal trigger.
+    """
+    parquet_prelude = (
+        "import pandas as pd, tempfile, os as _os; "
+        "df = pd.DataFrame({'a':[1,2,3]}); "
+        "p = tempfile.mktemp(suffix='.parquet'); "
+        "df.to_parquet(p); "
+        "pd.read_parquet(p); "
+        "_os.remove(p); "
+    )
+    return [
+        ImportTest("A", "import numpy; import torch", "import numpy; import torch; print('A OK')"),
+        ImportTest("B", "import pyarrow; import torch", "import pyarrow; import torch; print('B OK')"),
+        ImportTest("C", "import pandas; import torch", "import pandas; import torch; print('C OK')"),
+        ImportTest(
+            "D", "import pandas; import pyarrow; import torch",
+            "import pandas; import pyarrow; import torch; print('D OK')",
+        ),
+        ImportTest(
+            "E", "import numpy; import pyarrow; import torch",
+            "import numpy; import pyarrow; import torch; print('E OK')",
+        ),
+        ImportTest(
+            "F", "import pandas; import numpy; import torch",
+            "import pandas; import numpy; import torch; print('F OK')",
+        ),
+        ImportTest(
+            "G", "import pyarrow; import numpy; import torch",
+            "import pyarrow; import numpy; import torch; print('G OK')",
+        ),
+        ImportTest(
+            "H", "import pandas; import numpy; import pyarrow; import torch",
+            "import pandas; import numpy; import pyarrow; import torch; print('H OK')",
+        ),
+        ImportTest(
+            "I", "pandas.read_parquet(tiny_file); import torch",
+            parquet_prelude + "import torch; print('I OK')",
+        ),
+        ImportTest(
+            "J", "import numpy; pandas.read_parquet(tiny_file); import torch",
+            "import numpy; " + parquet_prelude + "import torch; print('J OK')",
+        ),
+        ImportTest(
+            "K", "import pyarrow; pandas.read_parquet(tiny_file); import torch",
+            "import pyarrow; " + parquet_prelude + "import torch; print('K OK')",
+        ),
+    ]
+
+
 def run_isolated(test: ImportTest) -> Result:
     """Runs `test.code` in a brand-new `python -c` subprocess (a clean
     process with nothing pre-loaded except the interpreter itself).
@@ -199,8 +277,10 @@ def run_isolated(test: ImportTest) -> Result:
 
     if proc.returncode == 0:
         return Result(test.id, test.description, PASS, proc.stdout.strip())
-    tail = "\n        ".join(proc.stderr.strip().splitlines()[-8:]) or "(no stderr captured)"
-    return Result(test.id, test.description, FAIL, tail)
+    # Full traceback captured, not truncated -- the whole point of this
+    # narrowing round is to see exactly what each failure says.
+    full_stderr = proc.stderr.strip() or "(no stderr captured)"
+    return Result(test.id, test.description, FAIL, full_stderr)
 
 
 # --------------------------------------------------------------------------
@@ -368,7 +448,10 @@ def run_parquet_smoke_test(configured_model: str, n_rows: int = 10) -> Result:
 def print_result(r: Result) -> None:
     print(f"[{r.status}] {r.id}: {r.description}")
     if r.detail:
-        print(f"        -> {r.detail}")
+        lines = r.detail.splitlines() or [r.detail]
+        print(f"        -> {lines[0]}")
+        for line in lines[1:]:
+            print(f"           {line}")
 
 
 def main() -> None:
@@ -394,6 +477,15 @@ def main() -> None:
     print("PART A: isolated import-order tests (each in its own subprocess)")
     print("=" * 78)
     for test in build_import_tests():
+        r = run_isolated(test)
+        print_result(r)
+        results.append(r)
+
+    print()
+    print("=" * 78)
+    print("PART A2: numpy/pandas/pyarrow narrowing matrix (tests A-K)")
+    print("=" * 78)
+    for test in build_narrowing_tests():
         r = run_isolated(test)
         print_result(r)
         results.append(r)
@@ -519,9 +611,10 @@ def main() -> None:
             print(f"  - {r.id}: {r.description}")
             print(f"    {r.detail}")
     print(
-        "\nReport this FULL output back verbatim -- especially which of TEST 5/6/C/D "
-        "and X1-X4 are PASS vs FAIL, and the PART B DLL overlap / c10.dll / vcruntime "
-        "results -- so the next step is chosen from evidence, not another guess."
+        "\nReport this FULL output back verbatim -- especially which of TEST 5/6/C/D, "
+        "X1-X4, and the PART A2 narrowing tests A-K are PASS vs FAIL (with their full "
+        "tracebacks), plus the PART B DLL overlap / c10.dll / vcruntime results -- so "
+        "the next step is chosen from evidence, not another guess."
     )
 
 

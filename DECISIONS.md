@@ -719,3 +719,53 @@ cause -- forcing them without that evidence would be exactly the
 fix, capping those via `.env` is the documented next step (see README
 troubleshooting), tried in isolation so its effect can actually be
 observed rather than bundled with an unrelated change.
+
+---
+
+## 29. Round 2 real Windows evidence: faiss ruled out, pandas/pyarrow implicated -- still no confirmed root cause
+
+**Reported evidence** (from `scripts/diagnose_torch_faiss.py` run for
+real on the original Windows machine -- Python 3.11.9, torch 2.14.0+cpu,
+faiss 1.15.0):
+
+| Test | Result |
+|---|---|
+| `import torch` / `import sentence_transformers` / `from sentence_transformers import SentenceTransformer` / `import faiss` (each alone) | PASS |
+| `import faiss; import torch` | PASS |
+| `import torch; import faiss` | PASS |
+| `import torch;` then `pandas`+`pyarrow` | PASS |
+| `import pandas; import torch` | **FAIL** (WinError 1114, c10.dll) |
+| `import pandas; import pyarrow;` then `sentence_transformers` | **FAIL** (same error) |
+| `pandas.read_parquet(tiny_file);` then `sentence_transformers` | **FAIL** (same error) |
+| The project's real `SentenceTransformerEmbedder` + `Retriever` construction | **FAIL** (same error) |
+
+**Confirmed fact:** faiss is not the trigger, in either import order --
+both `faiss; torch` and `torch; faiss` pass. This directly falsifies the
+original decision #28 hypothesis as *the* cause (it was already flagged
+there as unconfirmed; this is the disconfirming evidence).
+
+**Confirmed fact:** import order matters, and pandas and/or pyarrow are
+involved -- `torch` first is always fine; `pandas` (which transitively
+imports pyarrow via its parquet engine) before `torch` reliably fails.
+
+**Not yet established:** pandas and pyarrow were only ever tested
+*together* in the evidence above (pandas' parquet path pulls pyarrow in
+regardless). Whether pandas alone, pyarrow alone, numpy (which both
+pandas and pyarrow depend on) alone, or only specific combinations
+reproduce the failure is unknown. `scripts/diagnose_torch_faiss.py`
+Part A2 (tests A-K, added in this entry) isolates numpy, pandas, and
+pyarrow individually and in every pairwise/triple combination before
+`import torch`, specifically to answer this without guessing. Results
+pending a real run on the Windows machine.
+
+**Explicitly not claimed:** which single package or DLL is responsible.
+Static DLL inspection (`DECISIONS.md` context, `scripts/
+diagnose_torch_faiss.py` Part B) found numpy and pandas bundle a
+same-named `msvcp140...` DLL, which is a *candidate* signature of a
+duplicate-runtime conflict consistent with pandas/pyarrow being
+implicated -- but `msvcp140` is the standard MSVC C++ runtime that many
+unrelated packages legitimately bundle or depend on the system copy of;
+its presence in two packages' directories is not, on its own, proof of a
+conflict. Do not treat this as the confirmed cause without further
+evidence (e.g. Windows-native DLL dependency walking, which the current
+script does not attempt).
