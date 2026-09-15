@@ -1,0 +1,200 @@
+# Intent taxonomy for the AmazonHelp support agent.
+#
+# STATUS: DRAFT — seeded from domain knowledge of what @AmazonHelp actually
+# handles on Twitter (order/delivery, refunds, account, Prime, device
+# support), NOT yet validated against real cluster output because
+# data/raw/twcs.csv is not available in the environment that authored this
+# file. This is intentionally NOT copied from Banking77 or any generic
+# intent set.
+#
+# REQUIRED NEXT STEP (see README "Intent discovery"):
+#   python -m src.intents.discover
+# writes outputs/analysis/intent_clusters_report.json — top TF-IDF terms and
+# real example messages per data-driven cluster. Compare each cluster
+# against the taxonomy below and edit this file: rename/merge/split
+# intents, rewrite inclusion/exclusion criteria, and replace the `examples`
+# placeholders with real customer_text values from the report. Then flip
+# `status` below to VALIDATED. Do not treat this file as final until then.
+
+status: DRAFT_PENDING_DATA_VALIDATION
+brand: AmazonHelp
+version: 1
+
+intents:
+  - name: delivery_delay
+    description: >
+      Customer's order has not arrived by the expected date, or they are
+      asking for a status/ETA update on an order still in transit.
+    inclusion_criteria:
+      - Order confirmed placed/shipped but not yet received.
+      - Customer asks "where is my order" / "when will it arrive".
+    exclusion_criteria:
+      - Tracking shows delivered but customer never received it (use
+        missing_or_lost_package instead).
+      - Item arrived but is damaged/wrong (use damaged_or_defective_item).
+    examples:
+      - "My order still hasn't arrived and it was supposed to be here 3 days ago"
+      - "Any update on when order #XXXX will ship?"
+    always_escalate: false
+
+  - name: missing_or_lost_package
+    description: >
+      Carrier tracking shows the package as delivered, or shipping window
+      has clearly lapsed with no movement, but the customer says they never
+      received it.
+    inclusion_criteria:
+      - Tracking marked "delivered" but customer disputes receipt.
+      - Package appears lost in transit (no scan updates for an extended
+        period).
+    exclusion_criteria:
+      - Order is simply still in normal transit (use delivery_delay).
+    examples:
+      - "Tracking says delivered but there's nothing on my porch"
+      - "My package has been stuck in the same city for a week"
+    always_escalate: false
+
+  - name: damaged_or_defective_item
+    description: >
+      The item physically arrived but is broken, defective, damaged in
+      shipping, or otherwise not in sellable/working condition.
+    inclusion_criteria:
+      - Customer received the item and reports damage/defect.
+    exclusion_criteria:
+      - Item never arrived (use delivery_delay / missing_or_lost_package).
+      - Wrong item entirely (still fits here if framed as "this is broken",
+        otherwise treat as return_or_refund_request with a "wrong item"
+        note).
+    examples:
+      - "The item I received is damaged, order #789"
+      - "This arrived completely shattered"
+    always_escalate: false
+
+  - name: return_or_refund_request
+    description: >
+      Customer wants to return an item, is asking about refund status/
+      timeline, or received the wrong item and wants it corrected.
+    inclusion_criteria:
+      - Explicit return, refund, or exchange request.
+      - Asking "where is my refund" after a return was already initiated.
+    exclusion_criteria:
+      - Payment was charged incorrectly with no return involved (use
+        payment_or_billing_issue).
+    examples:
+      - "How do I return this, it's not what I ordered"
+      - "I returned this two weeks ago and still no refund"
+    always_escalate: false
+
+  - name: order_cancellation_or_change
+    description: >
+      Customer wants to cancel an order before it ships, or change its
+      shipping address/quantity/item before fulfillment.
+    inclusion_criteria:
+      - Explicit cancel/change request on an order not yet delivered.
+    exclusion_criteria:
+      - Order already delivered (use return_or_refund_request instead).
+    examples:
+      - "Can I still cancel my order, I haven't received a shipping notice"
+      - "I need to change my delivery address before it ships"
+    always_escalate: false
+
+  - name: account_access_issue
+    description: >
+      Customer cannot log in, has a locked/compromised account, or needs
+      help with password/2FA/identity verification.
+    inclusion_criteria:
+      - Login failure, locked account, suspected unauthorized access.
+    exclusion_criteria:
+      - Payment method issues with no login/security component (use
+        payment_or_billing_issue).
+    examples:
+      - "I can't log into my account, it says it's locked"
+      - "Someone else may have accessed my account"
+    always_escalate: true
+    escalation_reason: >
+      Account security/verification requires identity confirmation the
+      agent cannot perform; always route to a human.
+
+  - name: payment_or_billing_issue
+    description: >
+      Customer was charged an unexpected/incorrect amount, a payment
+      failed, or they have a billing dispute.
+    inclusion_criteria:
+      - Incorrect charge, duplicate charge, failed payment, billing
+        dispute.
+    exclusion_criteria:
+      - Refund timing question with no dispute about the charge amount
+        itself (use return_or_refund_request).
+    examples:
+      - "I was charged twice for the same order"
+      - "Why does my card show a charge I don't recognize"
+    always_escalate: true
+    escalation_reason: >
+      Payment disputes require account/payment-method verification and
+      potential financial adjustment beyond the agent's authority.
+
+  - name: product_or_device_technical_support
+    description: >
+      Customer needs help getting an Amazon device or digital product
+      working (Kindle, Echo, Fire TV, the Amazon app, digital content
+      playback).
+    inclusion_criteria:
+      - Device won't turn on/connect/update, app malfunction, digital
+        content playback issue.
+    exclusion_criteria:
+      - Physical damage from shipping (use damaged_or_defective_item).
+    examples:
+      - "My Fire TV won't connect to wifi after the update"
+      - "The Kindle app keeps crashing when I open a book"
+    always_escalate: false
+
+  - name: subscription_or_membership_issue
+    description: >
+      Questions or problems related to Prime membership, Prime Video/
+      Music, or other recurring subscriptions (signup, renewal,
+      cancellation, benefits not working).
+    inclusion_criteria:
+      - Prime/subscription signup, renewal, cancellation, or benefit
+        access problems.
+    exclusion_criteria:
+      - One-off order issues unrelated to membership status.
+    examples:
+      - "Why was I charged for Prime renewal, I cancelled last month"
+      - "Prime Video won't let me stream on my TV"
+    always_escalate: false
+
+  - name: general_complaint_or_feedback
+    description: >
+      Customer expresses dissatisfaction, frustration, or feedback without
+      a single clear actionable request, or the issue is a pattern/
+      systemic complaint rather than one order.
+    inclusion_criteria:
+      - Venting, general dissatisfaction, feedback about service quality.
+    exclusion_criteria:
+      - Any message with one of the specific, actionable issues above
+        should use that intent instead, even if phrased as a complaint.
+    examples:
+      - "Your customer service has gotten so much worse this year"
+      - "Really disappointed with how this was handled overall"
+    always_escalate: true
+    escalation_reason: >
+      Open-ended dissatisfaction requires human judgement to de-escalate
+      and assess; no single grounded action resolves it.
+
+  - name: other_unclear
+    description: >
+      Message doesn't map cleanly to another intent, is too ambiguous to
+      classify confidently, or requires clarification before it can be
+      routed.
+    inclusion_criteria:
+      - Fallback bucket when no other intent's inclusion criteria are met.
+    exclusion_criteria:
+      - Should shrink as the taxonomy is validated against real data; a
+        persistently large other_unclear cluster after validation signals
+        a missing intent category.
+    examples:
+      - "hey can you help"
+      - "this is ridiculous"
+    always_escalate: true
+    escalation_reason: >
+      Low classification confidence by definition; insufficient grounding
+      to safely auto-handle.

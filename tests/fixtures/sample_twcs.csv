@@ -1,0 +1,15 @@
+tweet_id,author_id,inbound,created_at,text,response_tweet_id,in_response_to_tweet_id
+1001,cust1,True,Mon Jan 02 10:00:00 +0000 2017,My order #123 hasn't arrived yet,1002,
+1002,AmazonHelp,False,Mon Jan 02 10:05:00 +0000 2017,@cust1 We're sorry to hear that! Can you share your order number via DM?,1003,1001
+1003,cust1,True,Mon Jan 02 10:10:00 +0000 2017,@AmazonHelp Sent via DM order #123,1004,1002
+1004,AmazonHelp,False,Mon Jan 02 10:20:00 +0000 2017,@cust1 Thanks! We've issued a refund for the delayed order.,,1003
+2001,cust2,True,Mon Jan 02 11:00:00 +0000 2017,Where is my package? Order #456,2002,
+2002,AmazonHelp,False,Mon Jan 02 11:10:00 +0000 2017,@cust2 Your package is on its way tracking https://amzn.to/track456,,2001
+3001,cust3,True,Mon Jan 02 12:00:00 +0000 2017,The item I received is damaged order #789,3002,
+3002,AmazonHelp,False,Mon Jan 02 12:15:00 +0000 2017,@cust3 So sorry about that! We'll send a replacement right away.,,3001
+4001,cust4,True,Mon Jan 02 13:00:00 +0000 2017,My iPhone won't turn on after update,4002,
+4002,AppleSupport,False,Mon Jan 02 13:10:00 +0000 2017,@cust4 Let's get that fixed. Try a force restart: hold Volume Down + Power.,4003,4001
+4003,cust4,True,Mon Jan 02 13:20:00 +0000 2017,@AppleSupport That worked thanks!,,4002
+1001,cust1,True,Mon Jan 02 10:00:00 +0000 2017,My order #123 hasn't arrived yet (duplicate row),1002,
+5001,cust5,True,Mon Jan 02 14:00:00 +0000 2017,,,
+6001,cust6,True,Mon Jan 02 15:00:00 +0000 2017,Random unrelated tweet not part of any brand thread,,

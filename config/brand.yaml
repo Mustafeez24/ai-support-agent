@@ -1,0 +1,17 @@
+# Descriptive facts about the target brand, used for prompt calibration
+# (src/agent/prompts.py) and documentation. Operational settings (which
+# author_id to filter on, which env vars to read) live in .env / .env.example
+# and src/config.py -- kept out of this file so there is exactly one source
+# of truth for anything the code actually branches on.
+
+brand:
+  name: AmazonHelp
+  display_name: Amazon Help
+  platform: Twitter/X
+  twitter_handle: "@AmazonHelp"
+  industry: e-commerce / retail customer support
+  voice_notes: >
+    Replies typically open by addressing the customer's @handle, are brief
+    (1-3 sentences), apologetic where appropriate, and route
+    account-specific or payment actions to DM/phone rather than resolving
+    them in-thread. src/agent/prompts.py's system prompt reflects this.
