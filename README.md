@@ -264,6 +264,27 @@ and a real (unbounded, human-paced) golden-set labeling session; it is not
 a 15-minute process end-to-end, and `report/report.md` does not claim
 otherwise.
 
+## Troubleshooting
+
+**`OSError: [WinError 1114] ... c10.dll` when running `build_index.py` on
+Windows**, even though `import torch` and `import sentence_transformers`
+both succeed standalone: this is a known class of Windows DLL-init-order
+conflict between faiss-cpu's and torch's bundled MKL/OpenMP runtimes when
+both load in the same process (see `DECISIONS.md` #28 for the full
+diagnosis). This repo already fixes the code-level cause (the retrieval
+code now loads the embedding model before importing faiss) and sets
+`KMP_DUPLICATE_LIB_OK=TRUE` automatically on Windows as a secondary safety
+net — no manual environment variables needed for a normal run. If the
+error still occurs after pulling the latest code:
+1. Confirm you're on the fixed version: `git log --oneline -1 -- src/retrieval/retriever.py` should show a commit mentioning DLL/import order.
+2. As a next, deliberately isolated step (not applied automatically, since it wasn't evidenced as necessary), try capping thread counts in `.env`:
+   ```
+   OMP_NUM_THREADS=1
+   MKL_NUM_THREADS=1
+   ```
+   then re-run `python scripts\build_index.py` and report whether it changes the outcome.
+3. If it still fails, capture the full new traceback — the fix in this repo targets the specific symptom above; a different traceback means a different cause.
+
 ## Limitations
 
 See `report/report.md` Sections 12 and 14 for the full, honest list

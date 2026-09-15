@@ -12,6 +12,30 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Windows-only mitigation for a known class of DLL-init failures when a
+# process loads more than one native library that bundles its own Intel
+# OpenMP/MKL runtime (e.g. faiss-cpu and torch, both used by
+# src/retrieval/). Symptoms range from "OMP: Error #15: ... libiomp5md.dll
+# already initialized" to a harder failure such as
+# "OSError: [WinError 1114] ... c10.dll" depending on load order and DLL
+# versions. KMP_DUPLICATE_LIB_OK=TRUE tells the Intel OpenMP runtime to
+# tolerate a second copy being loaded instead of erroring; it does not
+# change model behavior, thread counts, or numerical results. Set via
+# setdefault() so it NEVER overrides a value the user (or their shell)
+# already configured, and only applied on Windows since this class of
+# conflict is Windows-DLL-loader-specific.
+#
+# This project's primary fix for this failure class is import ORDER (see
+# src/retrieval/retriever.py: the embedder's model is loaded before faiss
+# is imported in the same process, so torch initializes first). This
+# env var is a secondary, documented safety net -- if the failure recurs
+# after the import-order fix, the next documented step (not applied here,
+# since forcing it without evidence it's needed would be exactly the
+# "arbitrary setting" this project avoids) is capping OMP_NUM_THREADS /
+# MKL_NUM_THREADS via .env -- see README's troubleshooting section.
+if os.name == "nt":
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 # Load .env from the project root if present. Never overrides variables
 # already set in the real environment (e.g. CI secrets).
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

@@ -642,3 +642,63 @@ crashed (a tiny CSV with emoji/CJK/accented text run through the real
 the original Unicode unmodified when read back, plus a direct assertion
 that the sample text cannot even be cp1252-encoded (documenting why the
 bug occurred, not just that the fix exists).
+
+---
+
+## 28. `Retriever` embeds before importing faiss (Windows DLL-init-order fix)
+
+**Decision:** `Retriever.build()` now calls `self.embedder.embed(...)`
+*before* `import faiss` (previously faiss was imported first). `Retriever.load()`
+does a best-effort `embedder.dimension` warm-up (triggering the same lazy
+model load) before its own `import faiss`, wrapped in `try/except` so an
+embedder that isn't ready to warm up (e.g. an unfit `TfidfEmbedder`) can't
+break loading. Additionally, `src/config.py` sets
+`KMP_DUPLICATE_LIB_OK=TRUE` via `os.environ.setdefault(...)`, Windows-only
+(`os.name == "nt"`), before anything else in the module executes.
+
+**Root cause this addresses:** on a real Windows run (reported: Python
+3.11.9, torch 2.14.0+cpu, faiss 1.15.0), `python scripts\build_index.py`
+failed with `OSError: [WinError 1114] ... c10.dll` -- but `import torch`
+and `import sentence_transformers` both succeeded fine as standalone
+commands. The difference: in `build_index.py`'s actual process,
+`Retriever.build()` ran `import faiss` (line 81, at the time) *before*
+calling `self.embedder.embed(...)`, which is what lazily triggers
+`sentence-transformers`' own `import torch`. faiss-cpu on Windows bundles
+its own Intel MKL/OpenMP runtime; when a second, different native library
+(torch) tries to initialize its own copy of that runtime afterward in the
+same process, the Windows DLL loader can fail the second library's init
+routine outright -- which is consistent with every symptom reported:
+success in a fresh process with no faiss involved, failure specifically
+inside `Retriever.build()`, specifically at the `torch` import triggered
+from `.embed()`.
+
+**Why this is the smallest correct fix:** it's a two-statement reorder
+(plus the equivalent one-line warm-up in `load()`) with no change to the
+embedding model, no package version change, and no change to retrieval
+semantics -- `vectors.shape[1]` (needed to construct the FAISS index) is
+computed identically either way, just after the embedder has already run
+instead of before.
+
+**Verification status -- read carefully:** this diagnosis is grounded in
+reading the actual code and matches every reported symptom, and the fix
+follows a well-documented class of Windows PyTorch/MKL DLL-conflict
+issue. **It was not (and could not be) verified against the real failure**,
+because the environment that made this fix runs Linux, where this class
+of DLL-load-order conflict does not occur (Linux's dynamic linker doesn't
+have Windows' TLS-slot/DLL-init-routine constraints), and has no access to
+the Windows machine that produced the original traceback. `KMP_DUPLICATE_LIB_OK`
+is applied defensively (it's a safe, standard, non-behavior-changing
+mitigation for this whole error class) but is *not* claimed to be proven
+necessary here -- if the import-order fix alone resolves it, this env var
+is inert. Confirming the fix requires re-running `python scripts\build_index.py`
+on the original Windows machine.
+
+**Tradeoff / what was deliberately NOT done:** thread-count env vars
+(`OMP_NUM_THREADS`, `MKL_NUM_THREADS`) were considered but not forced,
+since there was no evidence (only one Windows machine's single traceback)
+that thread-count contention, rather than DLL load order, was the actual
+cause -- forcing them without that evidence would be exactly the
+"arbitrary setting" this project avoids. If the failure recurs after this
+fix, capping those via `.env` is the documented next step (see README
+troubleshooting), tried in isolation so its effect can actually be
+observed rather than bundled with an unrelated change.

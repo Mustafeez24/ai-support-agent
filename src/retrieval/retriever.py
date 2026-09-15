@@ -78,9 +78,17 @@ class Retriever:
         if len(pairs_df) == 0:
             raise ValueError("No rows with non-empty customer_text to index.")
 
+        # Embed BEFORE importing faiss. On Windows, faiss-cpu bundles its own
+        # MKL/OpenMP runtime; if it initializes first in the process, torch's
+        # later DLL init (triggered by the embedder's lazy sentence-transformers
+        # import) can fail with WinError 1114. Embedding first guarantees
+        # torch/sentence-transformers -- whatever the embedder needs -- loads
+        # and initializes before faiss ever enters the process. See
+        # DECISIONS.md for the full diagnosis.
+        vectors = self.embedder.embed(pairs_df["customer_text"].tolist())
+
         import faiss
 
-        vectors = self.embedder.embed(pairs_df["customer_text"].tolist())
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)
         self.index = index
@@ -123,6 +131,16 @@ class Retriever:
 
     @classmethod
     def load(cls, embedder: Embedder, index_path: Path, metadata_path: Path, top_k: int = 5) -> "Retriever":
+        # Same DLL-init-order concern as build() (see comment there): warm
+        # the embedder (triggers its lazy model load, e.g. torch) before
+        # faiss enters the process for the first time. Best-effort --
+        # an embedder that isn't ready to load yet (e.g. an unfit
+        # TfidfEmbedder) just skips the warm-up rather than breaking load().
+        try:
+            _ = embedder.dimension
+        except Exception:
+            pass
+
         import faiss
 
         if not index_path.exists() or not metadata_path.exists():
